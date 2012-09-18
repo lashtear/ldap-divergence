@@ -120,8 +120,8 @@ sub dnsuperior { my $rv = ($_[0] =~ /^.*?(?<!\\),(.*)/)[0]; $rv }
 sub cmpDNs
 {
 	my ($adn, $bdn) = @_;
-	my $cadn = canonical_dn($adn, casefold => 'lower'); 
-	my $cbdn = canonical_dn($bdn, casefold => 'lower');
+	my $cadn = canonical_dn(lc($adn), casefold => 'lower'); 
+	my $cbdn = canonical_dn(lc($bdn), casefold => 'lower');
 	if ($ciscmp{lc rdnattr($cadn)}) { $cadn = lc($cadn), $cbdn = lc($cbdn) }
 
 	$cadn cmp $cbdn;
