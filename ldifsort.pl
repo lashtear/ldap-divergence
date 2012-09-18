@@ -1,5 +1,9 @@
 #! /usr/bin/perl -w
-# $Id: ldifsort.pl,v 1.2 2004/03/05 21:42:36 acctmgr Exp $
+
+# This is a structural ldif sort, by Emily Backes, based on the
+# ldifsort.pl idea by Kartik Subbarao.
+
+# License is BSD3, if I figure out where I put that boilerplate.
 
 use strict;
 use warnings;
@@ -19,15 +23,13 @@ sub read_positions {
 
     seek (LDIFH, 0, 0);
     while (<LDIFH>) {
-        1 while s/^(dn:.*)?\n /$1/m; # Handle line continuations
-        my $value;
-        if (/^dn(::?) (.*)$/m) {
-            $value = $2;
-            $value = decode_base64($value) if $1 eq '::';
-        }
-        push @valuepos, (canonical_dn (lc ($value),
-                                       reverse => 1) . "\0" . $pos);
-        $pos = tell;
+	s/\n //gsm; # unwrap
+	if (my ($b64, $dn) = (/^dn(::?) (.*)$/m)) {
+	    $dn = decode_base64($dn) if $b64 eq '::';
+	    push @valuepos,
+	      (canonical_dn (lc ($dn), reverse => 1) . "\0" . $pos);
+	}
+	$pos = tell;
     }
     return \@valuepos;
 }
@@ -35,14 +37,37 @@ sub read_positions {
 sub output_ldif {
     my $valuepos = shift;
     local $/ = ""; # break on empty lines
-    
+
     foreach (sort @$valuepos) {
-        my ($value, $pos) = split /\0/;
-        seek (LDIFH, $pos, 0);
-        my $entry = <LDIFH>;
-#        print "\# $value\n";
-        print $entry;
-        print "\n" if $entry !~ /\n\n$/;
+	my ($value, $pos) = split /\0/;
+	seek (LDIFH, $pos, 0);
+	my $entry = <LDIFH>;
+
+	$entry =~ s/\n //gsm; # unwrap
+	my @lines = split /\n/, $entry;
+	my $dnline = shift @lines;
+	if (my ($b64, $dn) = ($dnline =~ /^dn(::?) (.*)$/m)) {
+	    $dn = decode_base64($dn) if $b64 eq '::';
+	    print "dn: ",
+	      canonical_dn (lc ($dn),
+			    casefold => 'lower',
+			    mbcescape => 1), "\n";
+	}
+	print
+	  map {
+	      my ($attr, $val) = @$_;
+	      $val =~ /^\s+/ or $val =~ /\s$/ or $val =~ /[^ -~]/ ?
+		"$attr:: " . encode_base64($val, '') . "\n" :
+		  "$attr: $val\n"
+	      } sort {
+		  join ("\0", @$a) cmp join ("\0", @$b)
+	      } map {
+		  my ($attr, $b64, $val) = (/^([^:]+)(::?) ?(.*)$/);
+		  $attr = lc $attr;
+		  $val = decode_base64 ($val) if $b64 eq '::';
+		  [$attr, $val]
+	      } @lines;
+	print "\n";
     }
 }
 
